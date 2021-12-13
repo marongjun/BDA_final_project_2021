@@ -1,0 +1,284 @@
+---
+title: "Project"
+author: "Anonymous"
+output: 
+  pdf_document: 
+    toc: yes
+    toc_depth: 2
+urlcolor: blue
+---
+```{r setup, include=FALSE}
+library(rstan)
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+seed <- 9001
+
+library(bayesplot)
+library(extraDistr)
+library(loo)
+library("bayesplot")
+library("ggplot2")
+
+color_scheme_set("brewer-Accent")
+```
+\newpage  
+# Introduction  
+## The motivation  
+Predicting football results is a very popular topic. Most often, predictions are dealing with the final outcome of the matches (win / lose / draw) or the actual results (number of goals scored).  
+
+We were, however, interested in one of the auxiliary outcomes of the football match - number of yellow cards. Referees are using yellow cards as a way to caution players for various kinds of offences. Most often, yellow cards are shown for reckless or intentional fouls. They can also be shown for dissent, unsporting behaviour or breaking any of the rules of the game.  
+
+Referees can also show red cards, for more serious fouls, committed using excessive force, and for serious misconduct (red cards are not part of this project).  
+
+Decision on whether an action deserves a card penalty (and if yes, is it a yellow or a red card) is following strict rules. But still, it is up to the referee to make a final judgement, based on his view of the situation.   
+
+```{r echo=FALSE}
+knitr::include_graphics('images/yc_image.jpeg')
+```
+
+## Idea  
+We wanted to check if occurrences of yellow cards are generally the same for every team, or whether some teams are more prone to getting yellow cards than the others. Is there a significant difference in the number of yellow cards teams get during the match and can we make any prediction of this outcome?  
+
+We believe that the number of yellow cards should be inversely correlated to team quality. Teams with lower skill level usually need to compensate by playing more aggressively, resulting in more risky fouls when trying to stop the attack.  
+
+On the other hand, ‘aggressiveness’ can be a part of the team’s tactics - a conscious decision by a team manager to instruct his players to make more or less fouls. Also, some players may be inherently more aggressive, keeping their teams’ card score at higher levels.  
+
+## Some plots (if any)   
+Not sure if we should make some plots, or should come from other research?  
+Maybe use something from this article: https://football-observatory.com/IMG/sites/mr/mr57/en/ 
+
+# Datasets  
+## The source  
+Data for the project is obtained from data.world website. (https://data.world/dcereijo/player-scores). It is scraped from Transfermarkt.com, a very popular German website that collects statistics about football teams, matches and players.  
+
+The full dataset consists of several connected tables, as shown on this image.  
+```{r echo=FALSE}
+knitr::include_graphics('images/dataset.png')
+```
+For the project, we aggregated the data into a smaller table, keeping only club_id, game_id and sum(yellow_cards). 
+We decided to focus on only one competition - English Premier League (EPL) and on only one season - 2019.  
+
+EPL is the top level league in the English football system, and it consists of 20 teams. During one season, each team plays two matches against each opponent (total 38 matches). This means that our final dataset has 760 datapoints. For simplicity, teams and matches are indexed in the dataset, so that teams are represented by values (1-20) and matches by values (1-38). Outcomes (number of yellow cards in a match) are integers - in this case, having values (0-7).
+
+## Exploratory analysis
+```{r}
+data <- read.csv('datasets/yellow_cards.csv')
+head(data)
+```
+Overall, the most common number of yellow cards per match is 1. Min value is 0, max value is 7.  
+Mean values per team range from 1.0 to 2.3, and overall mean is 1.7.  
+For most of the teams, IQR range is 1-3, and values higher than 4-5 are outliers.  
+Team 5 is extreme in the high end, with upper quarter going up to 6, and value 7 as an outlier.  
+Team 9 is extreme in the low end, with upper quarter as low as 2, and values 3 and 4 as outliers.  
+```{r echo=FALSE, fig.width=10, fig.height=10}
+layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
+hist(data$yellow_cards, breaks = seq(from = -1, to = 7, by = 0.5), col='yellow', axes=FALSE,
+     main='Histogram of yellow cards per match', xlab='number of yellow cards per match')
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
+
+barplot(tapply(data$yellow_cards, data$team, mean),col='yellow', ylim=c(0,2.5), main='Means of yellow cards per match', xlab='team', axes=FALSE, cex.main=0.8)
+box(col="dimgray")
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
+abline(h=mean(data$yellow_cards), col='red', lwd=2)
+
+boxplot(split(data$yellow_cards, data$team),col='yellow', xlim=c(1,20), main='Boxplot of yellow cards per match', xlab='team', axes=FALSE, cex.main=0.8)
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray", xlim=c(1,20))
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
+```
+
+# Modeling  
+## Models (at least 2, description + stan code)  
+As the outcomes are discrete values, we are trying to model it using Poisson distribution:  
+$$
+y\sim poisson(\lambda)
+$$
+
+ - Model 1: separate model without predictors  
+Parameter $\lambda$ has the same prior for all teams:  
+$$
+\lambda[team_i]\sim\chi^2(2)
+$$
+
+ - Model 2: hierarchical model without predictors  
+Parameter $\lambda$ for each team is sampled from the hyperprior $\theta$:  
+$$
+\lambda[team_i]\sim\chi^2(\theta)
+$$
+$$
+\theta\sim lognormal(1,1)
+$$
+
+ - Model 3: hierarchical model with one predictor  
+As a predictor, we are using the number of opponents' yellow cards in the same match. This reasoning is coming from the assumption that in a 'heated' match, both teams will have an increased probability of getting a yellow card.  
+$$
+\lambda[team_i] = exp(\alpha[team_i] + x \cdot \beta[team_i])
+$$
+$$
+\alpha[team_i] = N(0,1)
+$$
+$$
+\beta[team_i] = N(0,1)
+$$
+
+ - Model 4: hierarchical model with one predictor  
+For this model, prediction is based on whether the team is playing home or away.  
+$$
+\lambda[team_i] = exp(\alpha[team_i] + h \cdot \beta[team_i])
+$$
+$$
+\alpha[team_i] = N(0,1)
+$$
+$$
+\beta[team_i] = N(0,1)
+$$
+
+## Informative or weakly informative priors
+
+ - Model 1  
+ Selection of prior for parameter $\lambda$ in based on distribution of observed values. It needs to be positive, mean should be between 1 and 2 and most of the density should be in the 0-7 interval.  
+ $\lambda\sim\chi^2(2)$ has mean at 1.4 and 95% interval is (0,6). So it roughly satisfies all these conditions, and seems to be like a valid choice for a prior.  
+```{r echo=FALSE, fig.width=10, fig.hight=3}
+par(mfrow=c(1,2))
+sequence <- seq(0,10,length=100)
+
+pdf <- dchisq(sequence, 2)
+plot(sequence,pdf,type="l",  xlim=c(0,10), main='chi^2 (2) pdf', xlab='prior lambda', col.main='dimgray', lwd=3, axes=FALSE)
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+abline(v=qchisq(0.5, 2),col="red", lwd=2)
+abline(v=qchisq(0, 2),col="blue", lwd=1, lty=2)
+abline(v=qchisq(0.95, 2),col="blue", lwd=1, lty=2)
+
+cdf <- pchisq(sequence, 2)
+plot(sequence,cdf,type="l",  xlim=c(0,10), main='chi^2 (2) cdf', xlab='prior lambda', col.main='dimgray', lwd=3, axes=FALSE)
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
+abline(v=qchisq(0.5, 2),col="red", lwd=2)
+abline(v=qchisq(0, 2),col="blue", lwd=1, lty=2)
+abline(v=qchisq(0.95, 2),col="blue", lwd=1, lty=2)
+```
+```{r echo=FALSE}
+cat('mean:',qchisq(0.5, 2),'\n')
+cat('quantile 0:',qchisq(0, 2),'\n')
+cat('quantile 0.95:',qchisq(0.95, 2),'\n')
+```
+
+
+ - Model 2  
+ In the second model, instead of having a fixed value $k=2$ for $\chi^2(k)$ distribution, we are now getting values for $k$ from the hiperprior $\theta\sim lognormal(1,1)$. So prior now becomes $\lambda\sim\chi^2(\theta)$.  
+ Hyperprior $\theta\sim lognormal(1,1)$ has mean at 2.7 and the 95% interval (0,14) is quite broad for expected $\lambda$ values. So it seems to be a weakly informative hyperprior.  
+```{r echo=FALSE, fig.width=10, fig.hight=3}
+par(mfrow=c(1,2))
+sequence <- seq(0,20,length=100)
+
+pdf <- dlnorm(sequence, 1,1)
+plot(sequence,pdf,type="l",  xlim=c(0,20), main='lognormal (1,1) pdf', xlab='hiperprior theta', col.main='dimgray', lwd=3, axes=FALSE)
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+abline(v=qlnorm(0.5, 1,1),col="red", lwd=1)
+abline(v=qlnorm(0, 1,1),col="blue", lwd=1, lty=2)
+abline(v=qlnorm(0.95, 1,1),col="blue", lwd=1, lty=2)
+
+cdf <- plnorm(sequence, 1,1)
+plot(sequence,cdf,type="l",  xlim=c(0,20), main='lognormal (1,1) cdf', xlab='hiperprior theta', col.main='dimgray', lwd=3, axes=FALSE)
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
+abline(v=qlnorm(0.5, 1,1),col="red", lwd=1)
+abline(v=qlnorm(0, 1,1),col="blue", lwd=1, lty=2)
+abline(v=qlnorm(0.95, 1,1),col="blue", lwd=1, lty=2)
+```
+```{r echo=FALSE}
+cat('mean:',qlnorm(0.5, 1,1),'\n')
+cat('quantile 0:',qlnorm(0, 1,1),'\n')
+cat('quantile 0.95:',qlnorm(0.95, 1,1),'\n')
+```
+
+ - Model 3  
+ For model 3, $\lambda$ is calculated as $\lambda = exp(\alpha + x \cdot \beta)$. So in this case, we need to select priors for intercept $\alpha$ and slope $\beta$ parameters. Without any detailed investigation, we decided to use weekly informative priors $\alpha=N(0,1)$ and $\beta=N(0,1)$.  
+ 
+  - Model 4  
+ Same as above - using weekly informative priors for intercept $\alpha=N(0,1)$ and slope $\beta=N(0,1)$.  
+
+
+### Stan code  
+
+Stan code for **model 1**:  
+```{r echo=FALSE}
+writeLines(readLines("models/model_1_.stan"))
+```
+
+Stan code for **model 2**:  
+```{r echo=FALSE}
+writeLines(readLines("models/model_2_.stan"))
+```
+
+Stan code for **model 3**:  
+```{r echo=FALSE}
+writeLines(readLines("models/model_3_.stan"))
+```
+
+Stan code for **model 4**:  
+```{r echo=FALSE}
+writeLines(readLines("models/model_4_.stan"))
+```
+
+('Generated quantites' part is not shown. Whole code can be seen in the appendix.)   
+
+### Stan code execution  
+```{r}
+stan_data <- list(y=split(data$yellow_cards, data$team),
+                  x=split(data$opponent_yellow_cards, data$team),
+                  h=split(data$is_home, data$team),
+                  N=38,
+                  J=20)
+```
+
+```{r warning=FALSE, message=FALSE, error=FALSE}
+model_1 <- stan(file = "models/model_1.stan", data = stan_data, seed=seed)
+model_2 <- stan(file = "models/model_2.stan", data = stan_data, seed=seed)
+model_3 <- stan(file = "models/model_3.stan", data = stan_data, seed=seed)
+model_4 <- stan(file = "models/model_4.stan", data = stan_data, seed=seed)
+```
+## Convergence diagnostics    
+
+```{r echo=FALSE, fig.width=10, fig.hight=3}
+mcmc_trace(model_1, regex_pars = 'lambda')
+mcmc_trace(model_1, pars = 'lambda[1]')
+```
+
+
+---
+
+
+
+
+
+
+## Posterior predictive checks and what was done to improve the model.
+## Model comparison (e.g. with LOO-CV).
+## Predictive performance assessment 
+## Sensitivity analysis with respect to prior choices
+# Discussion (issues and potential improvements.)
+# Conclusion
+# Self-reflection of what the group learned while making the project.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
