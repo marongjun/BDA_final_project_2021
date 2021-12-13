@@ -1,6 +1,9 @@
 ---
-title: "Project"
-author: "Anonymous"
+title: 'CS-E5710 Bayesian data analysis D'
+subtitle: 'Final report: Predicting number of yellow cards in a football match'
+author:
+  - Rongjun Ma, Aalto University 727794
+  - Dusan Vukic, Aalto University 1023756
 output: 
   pdf_document: 
     toc: yes
@@ -21,9 +24,9 @@ library("ggplot2")
 
 color_scheme_set("brewer-Accent")
 ```
-\newpage  
+\newpage 
 # Introduction  
-## The motivation  
+## Motivation  
 Predicting football results is a very popular topic. Most often, predictions are dealing with the final outcome of the matches (win / lose / draw) or the actual results (number of goals scored).  
 
 We were, however, interested in one of the auxiliary outcomes of the football match - number of yellow cards. Referees are using yellow cards as a way to caution players for various kinds of offences. Most often, yellow cards are shown for reckless or intentional fouls. They can also be shown for dissent, unsporting behaviour or breaking any of the rules of the game.  
@@ -43,21 +46,15 @@ We believe that the number of yellow cards should be inversely correlated to tea
 
 On the other hand, ‘aggressiveness’ can be a part of the team’s tactics - a conscious decision by a team manager to instruct his players to make more or less fouls. Also, some players may be inherently more aggressive, keeping their teams’ card score at higher levels.  
 
-## Some plots (if any)   
-Not sure if we should make some plots, or should come from other research?  
-Maybe use something from this article: https://football-observatory.com/IMG/sites/mr/mr57/en/ 
-
-# Datasets  
+# Dataset   
 ## The source  
-Data for the project is obtained from data.world website. (https://data.world/dcereijo/player-scores). It is scraped from Transfermarkt.com, a very popular German website that collects statistics about football teams, matches and players.  
-
+Data for the project is obtained from data.world website (https://data.world/dcereijo/player-scores). It is scraped from Transfermarkt.com, a popular German website that collects statistics about football teams, matches and players.  
 The full dataset consists of several connected tables, as shown on this image.  
 ```{r echo=FALSE}
 knitr::include_graphics('images/dataset.png')
 ```
 For the project, we aggregated the data into a smaller table, keeping only club_id, game_id and sum(yellow_cards). 
 We decided to focus on only one competition - English Premier League (EPL) and on only one season - 2019.  
-
 EPL is the top level league in the English football system, and it consists of 20 teams. During one season, each team plays two matches against each opponent (total 38 matches). This means that our final dataset has 760 datapoints. For simplicity, teams and matches are indexed in the dataset, so that teams are represented by values (1-20) and matches by values (1-38). Outcomes (number of yellow cards in a match) are integers - in this case, having values (0-7).
 
 ## Exploratory analysis
@@ -72,7 +69,7 @@ Team 5 is extreme in the high end, with upper quarter going up to 6, and value 7
 Team 9 is extreme in the low end, with upper quarter as low as 2, and values 3 and 4 as outliers.  
 ```{r echo=FALSE, fig.width=10, fig.height=10}
 layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
-hist(data$yellow_cards, breaks = seq(from = -1, to = 7, by = 0.5), col='yellow', axes=FALSE,
+hist(data$yellow_cards, breaks = seq(-0.25, 7.25, by = 0.5), col='yellow', axes=FALSE,
      main='Histogram of yellow cards per match', xlab='number of yellow cards per match')
 box(col="dimgray")
 axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
@@ -88,58 +85,22 @@ box(col="dimgray")
 axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray", xlim=c(1,20))
 axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
 ```
+\newpage
 
 # Modeling  
-## Models (at least 2, description + stan code)  
-As the outcomes are discrete values, we are trying to model it using Poisson distribution:  
+## Models and priors
+By analyzing distribution of the outcomes, we concluded that Poisson distribution would be the best fit.  
+
+### Model 1: separate model  
+Each team has it's own $\lambda$ parameter, and they are all using the same prior.  
 $$
 y\sim poisson(\lambda)
 $$
-
- - Model 1: separate model without predictors  
-Parameter $\lambda$ has the same prior for all teams:  
 $$
-\lambda[team_i]\sim\chi^2(2)
+\lambda_i\sim\chi^2(2)
 $$
-
- - Model 2: hierarchical model without predictors  
-Parameter $\lambda$ for each team is sampled from the hyperprior $\theta$:  
-$$
-\lambda[team_i]\sim\chi^2(\theta)
-$$
-$$
-\theta\sim lognormal(1,1)
-$$
-
- - Model 3: hierarchical model with one predictor  
-As a predictor, we are using the number of opponents' yellow cards in the same match. This reasoning is coming from the assumption that in a 'heated' match, both teams will have an increased probability of getting a yellow card.  
-$$
-\lambda[team_i] = exp(\alpha[team_i] + x \cdot \beta[team_i])
-$$
-$$
-\alpha[team_i] = N(0,1)
-$$
-$$
-\beta[team_i] = N(0,1)
-$$
-
- - Model 4: hierarchical model with one predictor  
-For this model, prediction is based on whether the team is playing home or away.  
-$$
-\lambda[team_i] = exp(\alpha[team_i] + h \cdot \beta[team_i])
-$$
-$$
-\alpha[team_i] = N(0,1)
-$$
-$$
-\beta[team_i] = N(0,1)
-$$
-
-## Informative or weakly informative priors
-
- - Model 1  
- Selection of prior for parameter $\lambda$ in based on distribution of observed values. It needs to be positive, mean should be between 1 and 2 and most of the density should be in the 0-7 interval.  
- $\lambda\sim\chi^2(2)$ has mean at 1.4 and 95% interval is (0,6). So it roughly satisfies all these conditions, and seems to be like a valid choice for a prior.  
+Selection of prior for parameter $\lambda$ in based on distribution of observed values. It needs to be positive, mean should be between 1 and 2 and most of the density should be in the 0-7 interval.  
+$\lambda\sim\chi^2(2)$ has mean at 1.4 and 95% interval is (0,6). So it roughly satisfies all these conditions, and seems to be a valid choice for a prior.  
 ```{r echo=FALSE, fig.width=10, fig.hight=3}
 par(mfrow=c(1,2))
 sequence <- seq(0,10,length=100)
@@ -162,123 +123,360 @@ abline(v=qchisq(0.5, 2),col="red", lwd=2)
 abline(v=qchisq(0, 2),col="blue", lwd=1, lty=2)
 abline(v=qchisq(0.95, 2),col="blue", lwd=1, lty=2)
 ```
-```{r echo=FALSE}
+```{r echo=FALSE, eval=FALSE}
 cat('mean:',qchisq(0.5, 2),'\n')
 cat('quantile 0:',qchisq(0, 2),'\n')
 cat('quantile 0.95:',qchisq(0.95, 2),'\n')
 ```
 
-
- - Model 2  
- In the second model, instead of having a fixed value $k=2$ for $\chi^2(k)$ distribution, we are now getting values for $k$ from the hiperprior $\theta\sim lognormal(1,1)$. So prior now becomes $\lambda\sim\chi^2(\theta)$.  
- Hyperprior $\theta\sim lognormal(1,1)$ has mean at 2.7 and the 95% interval (0,14) is quite broad for expected $\lambda$ values. So it seems to be a weakly informative hyperprior.  
+### Model 2: hierarchical model  
+Parameter $\lambda$ for each team is now coming from $lognormal(\mu,\sigma)$ prior (log-normal instead of normal because $\lambda$ needs to be positive), where $\mu$ and $\sigma$ are hyperpriors. We are keeping $\mu$ the same for all teams, while $\sigma$ stays separate.  
+$$
+y\sim poisson(\lambda)
+$$
+$$
+\lambda_i\sim lognormal(\mu,\sigma_i)
+$$
+$$
+\mu\sim lognormal(0,1)
+$$
+$$
+\sigma_i\sim lognormal(0,1)
+$$
+Hyperpriors $\mu\sim lognormal(0,1)$ and $\sigma\sim lognormal(0,1)$ have their means at 1 and 95% interval at (0,5). So, it roughly fits into our expectations for $\lambda$ parameter, as is already shown in priors analysis for model 1.  
 ```{r echo=FALSE, fig.width=10, fig.hight=3}
 par(mfrow=c(1,2))
-sequence <- seq(0,20,length=100)
+sequence <- seq(0,10,length=100)
 
-pdf <- dlnorm(sequence, 1,1)
-plot(sequence,pdf,type="l",  xlim=c(0,20), main='lognormal (1,1) pdf', xlab='hiperprior theta', col.main='dimgray', lwd=3, axes=FALSE)
+pdf <- dlnorm(sequence, 0,1)
+plot(sequence,pdf,type="l",  xlim=c(0,10), main='log-normal (0,1) pdf', xlab='hiperpriors', col.main='dimgray', lwd=3, axes=FALSE)
 box(col="dimgray")
 axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
 axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
-abline(v=qlnorm(0.5, 1,1),col="red", lwd=1)
-abline(v=qlnorm(0, 1,1),col="blue", lwd=1, lty=2)
-abline(v=qlnorm(0.95, 1,1),col="blue", lwd=1, lty=2)
+abline(v=qlnorm(0.5, 0,1),col="red", lwd=1)
+abline(v=qlnorm(0, 0,1),col="blue", lwd=1, lty=2)
+abline(v=qlnorm(0.95, 0,1),col="blue", lwd=1, lty=2)
 
-cdf <- plnorm(sequence, 1,1)
-plot(sequence,cdf,type="l",  xlim=c(0,20), main='lognormal (1,1) cdf', xlab='hiperprior theta', col.main='dimgray', lwd=3, axes=FALSE)
+cdf <- plnorm(sequence, 0,1)
+plot(sequence,cdf,type="l",  xlim=c(0,10), main='log-normal (0,1) cdf', xlab='hiperpriors', col.main='dimgray', lwd=3, axes=FALSE)
 box(col="dimgray")
 axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
 axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray")
-abline(v=qlnorm(0.5, 1,1),col="red", lwd=1)
-abline(v=qlnorm(0, 1,1),col="blue", lwd=1, lty=2)
-abline(v=qlnorm(0.95, 1,1),col="blue", lwd=1, lty=2)
+abline(v=qlnorm(0.5, 0,1),col="red", lwd=1)
+abline(v=qlnorm(0, 0,1),col="blue", lwd=1, lty=2)
+abline(v=qlnorm(0.95, 0,1),col="blue", lwd=1, lty=2)
 ```
-```{r echo=FALSE}
-cat('mean:',qlnorm(0.5, 1,1),'\n')
-cat('quantile 0:',qlnorm(0, 1,1),'\n')
-cat('quantile 0.95:',qlnorm(0.95, 1,1),'\n')
+```{r echo=FALSE, eval=FALSE}
+cat('mean:',qlnorm(0.5, 0,1),'\n')
+cat('quantile 0:',qlnorm(0, 0,1),'\n')
+cat('quantile 0.95:',qlnorm(0.95, 0,1),'\n')
 ```
 
- - Model 3  
- For model 3, $\lambda$ is calculated as $\lambda = exp(\alpha + x \cdot \beta)$. So in this case, we need to select priors for intercept $\alpha$ and slope $\beta$ parameters. Without any detailed investigation, we decided to use weekly informative priors $\alpha=N(0,1)$ and $\beta=N(0,1)$.  
+### Model 3: hierarchical model with one predictor  
+As a predictor, we are now adding number of opponents' yellow cards in the same match. This reasoning is coming from the assumption that in a 'heated' match, both teams will have an increased probability of getting a yellow card. We are now using log-Poisson distribution of parameter $\theta=log\lambda$. 
+$$
+y\sim poissonlog(\theta)
+$$
+$$
+\theta_i =  x \cdot \beta_i + \alpha_i
+$$
+$$
+\alpha_i = N(0,1)
+$$
+$$
+\beta_i = N(0,1)
+$$
+$$
+x \text{ - predictor (number of opponents' yellow cards)}
+$$
+$\theta$ is calculated using linear model for predictor values: $\theta = x \cdot \beta + \alpha$. So in this case, we need to select priors for intercept $\alpha$ and slope $\beta$ parameters. Without any detailed investigation, we decided to use weekly informative priors $\alpha=N(0,1)$ and $\beta=N(0,1)$.  
  
-  - Model 4  
- Same as above - using weekly informative priors for intercept $\alpha=N(0,1)$ and slope $\beta=N(0,1)$.  
-
-
+\newpage
 ### Stan code  
 
 Stan code for **model 1**:  
 ```{r echo=FALSE}
-writeLines(readLines("models/model_1_.stan"))
+writeLines(readLines("models/model_1.stan"))
 ```
 
 Stan code for **model 2**:  
 ```{r echo=FALSE}
-writeLines(readLines("models/model_2_.stan"))
+writeLines(readLines("models/model_2.stan"))
 ```
 
 Stan code for **model 3**:  
 ```{r echo=FALSE}
-writeLines(readLines("models/model_3_.stan"))
+writeLines(readLines("models/model_3.stan"))
 ```
-
-Stan code for **model 4**:  
-```{r echo=FALSE}
-writeLines(readLines("models/model_4_.stan"))
-```
-
-('Generated quantites' part is not shown. Whole code can be seen in the appendix.)   
 
 ### Stan code execution  
 ```{r}
 stan_data <- list(y=split(data$yellow_cards, data$team),
                   x=split(data$opponent_yellow_cards, data$team),
-                  h=split(data$is_home, data$team),
-                  N=38,
-                  J=20)
+                  N=38,  #number of matches for each team
+                  J=20  # number of teams
+                  )
 ```
 
 ```{r warning=FALSE, message=FALSE, error=FALSE}
 model_1 <- stan(file = "models/model_1.stan", data = stan_data, seed=seed)
 model_2 <- stan(file = "models/model_2.stan", data = stan_data, seed=seed)
 model_3 <- stan(file = "models/model_3.stan", data = stan_data, seed=seed)
-model_4 <- stan(file = "models/model_4.stan", data = stan_data, seed=seed)
 ```
+\newpage
 ## Convergence diagnostics    
 
+- In all 3 models, Rhat values are very close to 1, indicating that the chains are converging.  
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+mcmc_rhat(rhat(model_1,pars = 'lambda')) + yaxis_text(hjust = 0) + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_rhat(rhat(model_2,pars = 'lambda')) + yaxis_text(hjust = 0) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_rhat(rhat(model_3,pars = 'lambda')) + yaxis_text(hjust = 0) + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+ - In all 3 models, effective sample size ratio is higher than 0.5.  
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+mcmc_neff(neff_ratio(model_1,pars = 'lambda')) + yaxis_text(hjust = 0) + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_neff(neff_ratio(model_2,pars = 'lambda')) + yaxis_text(hjust = 0) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_neff(neff_ratio(model_3,pars = 'lambda')) + yaxis_text(hjust = 0) + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+ - All 4 chains seem to be converging.   
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+mcmc_trace(model_1, regex_pars = 'lambda') + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_trace(model_2, regex_pars = 'lambda') + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_trace(model_3, regex_pars = 'lambda') + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+ - All 4 chain seem to be converging (showing only two parameters as an example).   
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+mcmc_trace(model_1, pars = c('lambda[5]','lambda[9]')) + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_trace(model_2, pars = c('lambda[5]','lambda[9]')) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_trace(model_3, pars = c('lambda[5]','lambda[9]')) + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+ - Posterior densities are very similar in all 4 chains.   
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+mcmc_dens_chains(model_1, regex_pars = 'lambda') + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_dens_chains(model_2, regex_pars = 'lambda') + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_dens_chains(model_3, regex_pars = 'lambda') + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+ - Posterior densities for 4 chains  (showing only two parameters as an example).   
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+mcmc_dens_chains(model_1, pars = c('lambda[5]','lambda[9]')) + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_dens_chains(model_2, pars = c('lambda[5]','lambda[9]')) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_dens_chains(model_3, pars = c('lambda[5]','lambda[9]')) + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+
+## Posterior predictive checks  
+
+ - All 3 models show similar posterior distributions. Means are roughly in the range 1-2.5.  
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+mcmc_areas(model_1, regex_pars = 'lambda', prob = 0.8) + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_areas(model_2, regex_pars = 'lambda', prob = 0.8) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_areas(model_3, regex_pars = 'lambda', prob = 0.8) + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+ - Comparing posterior distribution for two most extreme teams: team 5 and team 9.   
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+mcmc_areas(model_1, pars = c('lambda[5]','lambda[9]'), prob = 0.8) + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_areas(model_2, pars = c('lambda[5]','lambda[9]'), prob = 0.8) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_areas(model_3, pars = c('lambda[5]','lambda[9]'), prob = 0.8) + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+
+\newpage 
+## Predictive performance assessment  
+
+ - Histograms for predicted values are similar to observed distribution.   
+```{r echo=FALSE, fig.hight=2, fig.width=10, message=FALSE}
+mcmc_hist(model_1,regex_pars = 'ypred', breaks = seq(-0.25, 10.25, by = 0.5)) + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_hist(model_2,regex_pars = 'ypred', breaks = seq(-0.25, 10.25, by = 0.5)) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_hist(model_3,regex_pars = 'ypred', breaks = seq(-0.25, 10.25, by = 0.5)) + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+ - Predicted values for two most extreme teams.   
+```{r echo=FALSE, fig.hight=2, fig.width=10, message=FALSE}
+mcmc_hist(model_1, pars = c('ypred[5]','ypred[9]'), breaks = seq(-0.25, 10.25, by = 0.5)) + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_hist(model_2, pars = c('ypred[5]','ypred[9]'), breaks = seq(-0.25, 10.25, by = 0.5)) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_hist(model_3, pars = c('ypred[5]','ypred[9]'), breaks = seq(-0.25, 10.25, by = 0.5)) + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+ - Densities for sampled values are roughly aligned with observations.   
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+ppc_dens_overlay_grouped(data$yellow_cards, as.matrix(model_1, pars = 'y_rep')[1:50,], group=data$team) + ggtitle('model 1') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+ppc_dens_overlay_grouped(data$yellow_cards, as.matrix(model_2, pars = 'y_rep')[1:50,], group=data$team) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+ppc_dens_overlay_grouped(data$yellow_cards, as.matrix(model_3, pars = 'y_rep')[1:50,], group=data$team) + ggtitle('model 3') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+
+## Model comparison 
+
+ - Using LOO-CV, we can see that the models have very similar elpd_loo, meaning that they have a similar predicitive power. Model 2 (hierarchical) is just slightly better than the others.  
+```{r echo=FALSE}
+loo_1 = loo(model_1)
+loo_2 = loo(model_2)
+loo_3 = loo(model_3)
+loo_1
+loo_2
+loo_3
+```
+\newpage
+ - For all models, k-values are good (k<0.5), meaning that our models have very reliable estimates.  
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+plot(loo_1, main='model_1 k-values')
+plot(loo_2, main='model_2 k-values')
+plot(loo_3, main='model_3 k-values')
+```
+\newpage
+
+## Sensitivity analysis with respect to prior choices
+
+For sensitivity analysis, we are again running model_2, with much more informative priors:
+$$
+\mu\sim lognormal(1,0.01) \text{ instead of } \mu\sim lognormal(0,1)
+$$
+$$
+\sigma_i\sim lognormal(0,0.01) \text{ instead of } \sigma_i\sim lognormal(0,1)
+$$
 ```{r echo=FALSE, fig.width=10, fig.hight=3}
-mcmc_trace(model_1, regex_pars = 'lambda')
-mcmc_trace(model_1, pars = 'lambda[1]')
+par(mfrow=c(1,2))
+sequence <- seq(0,10,length=100)
+
+pdf <- dlnorm(sequence, 0,1)
+plot(sequence,pdf,type="l",  xlim=c(0,10), ylim=c(0,1.5), main='log-normal (0,1)', xlab='hiperprior mu', col.main='dimgray', lwd=3, axes=FALSE,col="darkblue")
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+abline(v=qlnorm(0.5, 0,1),col="darkblue", lwd=1)
+abline(v=qlnorm(0, 0,1),col="darkblue", lwd=1, lty=2)
+abline(v=qlnorm(0.95, 0,1),col="darkblue", lwd=1, lty=2)
+
+pdf <- dlnorm(sequence, 1,0.1)
+plot(sequence,pdf,type="l",  xlim=c(0,10), ylim=c(0,1.5), main='log-normal (1,0.01)', xlab='hiperprior mu', col.main='dimgray', lwd=3, axes=FALSE,col="orange")
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+abline(v=qlnorm(0.5, 1,0.1),col="orange", lwd=1)
+abline(v=qlnorm(0.025, 1,0.1),col="orange", lwd=1, lty=2)
+abline(v=qlnorm(0.975, 1,0.1),col="orange", lwd=1, lty=2)
+```
+```{r echo=FALSE, fig.width=10, fig.hight=3}
+par(mfrow=c(1,2))
+sequence <- seq(0,10,length=100)
+
+pdf <- dlnorm(sequence, 0,1)
+plot(sequence,pdf,type="l",  xlim=c(0,10), ylim=c(0,1.5), main='log-normal (0,1)', xlab='hiperprior sigma', col.main='dimgray', lwd=3, axes=FALSE,col="darkblue")
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+abline(v=qlnorm(0.5, 0,1),col="darkblue", lwd=1)
+abline(v=qlnorm(0, 0,1),col="darkblue", lwd=1, lty=2)
+abline(v=qlnorm(0.95, 0,1),col="darkblue", lwd=1, lty=2)
+
+pdf <- dlnorm(sequence, 0,0.1)
+plot(sequence,pdf,type="l",  xlim=c(0,10), ylim=c(0,1.5), main='log-normal (0,0.01)', xlab='hiperprior sigma', col.main='dimgray', lwd=3, axes=FALSE,col="orange")
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+abline(v=qlnorm(0.5, 0,0.1),col="orange", lwd=1)
+abline(v=qlnorm(0.025, 0,0.1),col="orange", lwd=1, lty=2)
+abline(v=qlnorm(0.975, 0,0.1),col="orange", lwd=1, lty=2)
 ```
 
 
----
+```{r warning=FALSE, message=FALSE, error=FALSE, echo=FALSE}
+model_2_sensitivity_check <- stan(file = "models/model_2_sensitivity_check.stan", data = stan_data, seed=seed)
+```
+\newpage
+ - Posterior distribution seems to be be very similar (comparing teams 5 and 9).  
+```{r echo=FALSE, fig.width=10, fig.hight=2}
+mcmc_areas(model_2, pars = c('lambda[5]','lambda[9]'), prob = 0.8) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_areas(model_2_sensitivity_check, pars = c('lambda[5]','lambda[9]'), prob = 0.8) + ggtitle('model 2 sensitivity check') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+ - Histogram of predicted values seems to be very similar (comparing teams 5 and 9).  
+```{r echo=FALSE, fig.hight=2, fig.width=10, message=FALSE}
+mcmc_hist(model_2, pars = c('ypred[5]','ypred[9]'), breaks = seq(-0.25, 10.25, by = 0.5)) + ggtitle('model 2') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+mcmc_hist(model_2_sensitivity_check, pars = c('ypred[5]','ypred[9]'), breaks = seq(-0.25, 10.25, by = 0.5)) + ggtitle('model 2 sensitivity check') + theme(plot.background = element_rect(color = "lightgray", size = 1))
+```
+\newpage
+ - Elpd_loo is slightly lower with the modified priors.  
+```{r echo=FALSE}
+loo_2
+loo_2_sensitivity_check = loo(model_2_sensitivity_check)
+loo_2_sensitivity_check
+```
+We can conlcude that model 2 is not very sensitive to the selection of priors.
 
+\newpage
+# Discussion
+## Issues 
+During the final project, we have faced some issues regarding the design of the models and practical implementation issues during modeling.  
 
+When we designed the model in the very beginning, we were uncertain about which prior distribution to choose and there have been a lot of discussions on this. After several rounds of testing different combinations separately and self-studying on how to build reasonable models, we finally reached persuasive solutions which are demonstrated in the modeling section. The teaching assistant was also crucial to help us out by guiding us to think about certain details.   
 
+In addition, there are also some practical challenges when implementing the models using Stan. For example, the issues regarding the input data type for certain sampling functions. We have spent days on some of these practical issues, and in the meanwhile also learned a lot when debugging.  
 
+It was a bit surprising to see that including a predictor did not improve predictive power. We assume that the reason lies in our choice of predictor value, and that there is no significant correlation between predictor and outcome. The team itself hierarchical group) is still the best predictor, and it has more influence on the outcome than what the other team did during the match.
 
+## Potential improvements  
+Three models are illustrated in the modeling section and they all achieved good performance. We also included one predictor of the opponent's yellow cards number in the 3rd model. Even though no obvious difference was observed, it was still a meaningful trial to take more environmental variables into account since football match is an interactive process within different teams.  
 
-## Posterior predictive checks and what was done to improve the model.
-## Model comparison (e.g. with LOO-CV).
-## Predictive performance assessment 
-## Sensitivity analysis with respect to prior choices
-# Discussion (issues and potential improvements.)
-# Conclusion
-# Self-reflection of what the group learned while making the project.
+Inspired by the Bayesian hierarchical model used for scoring prediction in Baio and Biangiardo's work[1], where the home advantage and the opponent condition are considered, we see a potential improvement of combining these factors also into the modeling of yellow cards prediction. An initial test model was implemented here as follows:   
+```{r warning=FALSE, message=FALSE, error=FALSE}
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+data_2 <- read.csv('datasets/yellow_card_home_away.csv')
 
+ng = nrow(data_2) # number of games
+nt = length(unique(data_2$home_team)) # number of teams
+teams = unique(data_2$home_team) # convert teams name into a list of index
+ht = unlist(sapply(1:ng, function(g) which(teams == data_2$home_team[g]))) # home team index 
+at = unlist(sapply(1:ng, function(g) which(teams == data_2$away_team[g]))) # away team index
 
+stan_data_2 = list(
+  nt = nt, 
+  ng = ng,
+  ht = ht,
+  at = at,
+  y1 = data_2$home_yellow_cards,
+  y2 = data_2$away_yellow_cards
+)
+model_4 = stan(file = 'models/potential_improvement.stan', data = stan_data_2,iter = 3000)
+```
+The following plot shows  the tendency to get yellow cards considering the home/away situation of each team. As shown in the plot, FC Liverpool shows a relatively small value (close to zero) in both cases (home and away). One possible explanation for the Liverpool team might be they play with a conservative strategy and prioritize safety. Further analysis could be conducted to validate the differences between teams but with this early test, we see potential improvement to combine more environmental factors into account.   
+```{r echo=FALSE}
+model_4_params = extract(model_4)
+home = colMeans(model_4_params$home)
+away = colMeans(model_4_params$away)
+plot(home,away,xlim=c(-0.5, 1), axes=FALSE)
+box(col="dimgray")
+axis(1, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+axis(2, col="dimgray", col.ticks="dimgray", col.axis="dimgray", cex.axis=1)
+abline(h=0, lwd=1, lty=2)
+abline(v=0, lwd=1, lty=2)
+text(home,away, labels=teams, cex=0.8, pos=4)
+```
 
+ - Stan code for **potential model including home/away and opponent team factors**:   
+```{r echo=FALSE}
+writeLines(readLines("models/potential_improvement.stan"))
+```
 
+\newpage
+# Conclusion  
+Three models implemented in this final project all achieved good performance. The results are validated through posterior checks and predictions are compared to real results and expected distribution of yellow cards rate for certain teams. The research question of predicting yellow cards is answered properly and future improvements are suggested.  
 
+We see the potential and meaning of predicting yellow cards, which helps decision-making and strategy adjustment for different teams in football matches.  
 
+Based on our modeling and observations, here we propose two hypotheses that could be tested in the future. First, the yellow cards rate for each team might be related to aggressiveness. Second, the lower probability of getting yellow cards might be explained by a conservative and safe strategy of playing. This strategy could be related to the price of the football players - the more expensive they are, the more careful they will be in playing football matches.  
 
+# Self-reflection   
+During this group project, we practiced what we learned from the course with real scenarios, where a Bayesian model can be made to make predictions and assist decision-making. Driven by the interest in football matches, we started the project by searching for available datasets and then developed the initial understanding of the dataset and designed the model together through a series of remote meetings.  
 
+While conceptualizing the model, we did meet some problems regarding how to build a meaningful model and what priors and distributions should be chosen as proper approaches. Unlike the assignments, where priors and assumptions are provided, all the details need to be considered thoroughly and justified. To validate our idea, we found certain evidence either based on our football pre-knowledge or observations from the dataset, and discussed with each other to reach a consensus. Through the iterations, we developed a good understanding of the dataset and the complete process of applying Bayesian data analysis.  
 
+This experience benefits us a lot not only for future work when dealing with similar projects but also for a way of thinking to decompose problems and develop reasonable solutions. Overall, we think we have achieved satisfying results and it was really an enjoyable experience to cooperate.  
 
-
-
-
-
+# Reference  
+[1]Baio, G., & Blangiardo, M. (2010). Bayesian hierarchical model for the prediction of football results. Journal of Applied Statistics, 37(2), 253-264.  
